@@ -1,4 +1,4 @@
-# Autnomous Vehicles - EML4842
+# Autonomous Vehicles - EML4842
 
 To get started:
 
