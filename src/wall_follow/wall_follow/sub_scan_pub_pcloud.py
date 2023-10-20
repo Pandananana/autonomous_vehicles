@@ -92,29 +92,6 @@ class ScanSubscribe(Node):
             self.go = not self.go
         self.buttonOn = bool(msg.buttons[2])
 
-        # if necessary, can add a delay here - would take one more global variable
-    
-    # def timer_callback(self):
-    #     ack = AckermannDriveStamped()
-    #     ack.drive.speed = self.vehicle_speed
-
-    #     error = 1 - self.dwall   # negative means turn right, positive means turn left
-    #     self.error_sum += error
-
-    #     control_effort = self.kp*error + self.ki*self.error_sum*self.timer_period + self.kd*(error-self.last_error)/self.timer_period
-    #     # timer period included in calcs so we can vary it without butchering Ks
-
-    #     self.get_logger().info(f'Error: {error} m    Control effort: {control_effort} rad')
-
-    #     self.last_error = error
-
-    #     ack.drive.steering_angle = (abs(error)/error) * min(abs(control_effort), math.pi/4)
-    #     # make sure the control effort does not exceed pi/4, and point it in the proper direction 
-
-    #     ack.drive.speed = self.go * self.vehicle_speed
-
-    #     self.publisher.publish(ack)
-
 
 
 
