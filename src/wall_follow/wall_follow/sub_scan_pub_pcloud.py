@@ -2,21 +2,40 @@ import rclpy
 from rclpy.node import Node
 import math
 
-from sensor_msgs.msg import LaserScan, PointCloud
-from geometry_msgs.msg import Point32
+from sensor_msgs.msg import LaserScan, Joy
+from ackermann_msgs.msg import AckermannDriveStamped
 
 
 class ScanSubscribe(Node):
     def __init__(self):
         super().__init__('wall_follow_converter')
-        self.subscription = self.create_subscription(LaserScan,'scan',self.listener_callback,10)
-        self.subscription  # prevent unused variable warning
+        self.lidar_subscription = self.create_subscription(LaserScan,'scan',self.lidar_callback,10)
+        self.joy_subscription = self.create_subscription(Joy, "joy", self.joy_callback, 10)
+        self.lidar_subscription  # prevent unused variable warning
+        self.joy_subscription
 
-        self.publisher = self.create_publisher(PointCloud, 'cloud', 10)
+        self.publisher = self.create_publisher(AckermannDriveStamped, 'vehicle_command_ackermann', 10)
 
-    def listener_callback(self, msg):
+        # initialize some globals, don't need to edit these
+        self.go = False
+        self.buttonOn = False
+        self.dwall = 0 
+        self.error_sum = 0
+        self.last_error = 0
+
+        # these are the parameters we can play around with
+        self.kp = 0.5
+        self.ki = 0
+        self.kd = 0.3
+        self.timer_period = 0.05    # seconds
+        self.vehicle_speed = 0.7
+
+        # self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        # self.timer # prevent unused variable warning
+
+    def lidar_callback(self, msg):
         # Initialize variables
-        out_msg = PointCloud()
+        # Keep value of d consistently updated
 
         front_angle = 45
         right_angle = 90
@@ -24,6 +43,9 @@ class ScanSubscribe(Node):
         front_index = int((front_angle/180) * math.pi / msg.angle_increment) 
         right_index = int((right_angle/180) * math.pi / msg.angle_increment) 
 
+        if (msg.ranges[front_index] < msg.range_min or msg.ranges[front_index] > msg.range_max or msg.ranges[right_index] < msg.range_min or msg.ranges[right_index] > msg.range_max):
+            return
+        
         d2 = msg.ranges[front_index]
         d1 = msg.ranges[right_index]
 
@@ -36,29 +58,65 @@ class ScanSubscribe(Node):
         # Distance between the two points
         d3 = math.sqrt((x1-x2)**2 + (y1-y2)**2)
 
-        dwall = d1 * (x2 - x1) / d3
+        self.dwall = d1 * (x2 - x1) / d3
 
-        self.get_logger().info('Dwall: "%f"' % dwall)
+        self.get_logger().info('Dwall: "%f"' % self.dwall)
 
-        # for i in range(len(msg.ranges)):
-        #     point = Point32()
-        #     # Skip invalid measurements
-        #     if (msg.ranges[i] < msg.range_min or msg.ranges[i] > msg.range_max):
-        #         continue
-        #     else:
-        #         # Convert from polar to cartesian coordinates
-        #         point.x = msg.ranges[i] * math.cos(msg.angle_min + i * msg.angle_increment)
-        #         point.y = msg.ranges[i] * math.sin(msg.angle_min + i * msg.angle_increment)
-        #         point.z = 0.0
 
-        #         # Add point and to message
-        #         out_msg.points.append(point)
-                
-        # # Add header to messagepoint = Point32()
-        # out_msg.header = msg.header
+        # PID starts here
+        ack = AckermannDriveStamped()
+        ack.drive.speed = self.vehicle_speed
 
-        # # Publish message
-        # self.publisher.publish(out_msg)
+        error = 1 - self.dwall   # negative means turn right, positive means turn left
+        self.error_sum += error
+
+        control_effort = self.kp*error + self.ki*self.error_sum*msg.scan_time + self.kd*(error-self.last_error)/msg.scan_time
+        # timer period included in calcs so we can vary it without butchering Ks
+
+        self.get_logger().info(f'Error: {error} m    Control effort: {control_effort} rad')
+
+        self.last_error = error
+
+        ack.drive.steering_angle = (abs(error)/error) * min(abs(control_effort), math.pi/4)
+        # make sure the control effort does not exceed pi/4, and point it in the proper direction 
+
+        ack.drive.speed = self.go * self.vehicle_speed
+
+        self.publisher.publish(ack)
+
+
+    def joy_callback(self, msg):
+
+        # SPECIFY A BUTTON HERE
+        if bool(msg.buttons[2]) and not self.buttonOn:
+            self.go = not self.go
+        self.buttonOn = bool(msg.buttons[2])
+
+        # if necessary, can add a delay here - would take one more global variable
+    
+    # def timer_callback(self):
+    #     ack = AckermannDriveStamped()
+    #     ack.drive.speed = self.vehicle_speed
+
+    #     error = 1 - self.dwall   # negative means turn right, positive means turn left
+    #     self.error_sum += error
+
+    #     control_effort = self.kp*error + self.ki*self.error_sum*self.timer_period + self.kd*(error-self.last_error)/self.timer_period
+    #     # timer period included in calcs so we can vary it without butchering Ks
+
+    #     self.get_logger().info(f'Error: {error} m    Control effort: {control_effort} rad')
+
+    #     self.last_error = error
+
+    #     ack.drive.steering_angle = (abs(error)/error) * min(abs(control_effort), math.pi/4)
+    #     # make sure the control effort does not exceed pi/4, and point it in the proper direction 
+
+    #     ack.drive.speed = self.go * self.vehicle_speed
+
+    #     self.publisher.publish(ack)
+
+
+
 
 
 def main(args=None):
