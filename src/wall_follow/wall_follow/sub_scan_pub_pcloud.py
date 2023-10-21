@@ -29,6 +29,7 @@ class ScanSubscribe(Node):
         self.kd = 0.3
         self.timer_period = 0.05    # seconds
         self.vehicle_speed = 0.7
+        self.desired_distance = 1   # meters
 
         # self.timer = self.create_timer(self.timer_period, self.timer_callback)
         # self.timer # prevent unused variable warning
@@ -36,29 +37,43 @@ class ScanSubscribe(Node):
     def lidar_callback(self, msg):
         # Initialize variables
         # Keep value of d consistently updated
+        
+        # NEW: take average over a 45 degree range (starts 45-90, ends 90-135)
+        points_to_test = int((math.pi/4)/msg.angle_increment)
+
 
         front_angle = 45
         right_angle = 90
 
         front_index = int((front_angle/180) * math.pi / msg.angle_increment) 
-        right_index = int((right_angle/180) * math.pi / msg.angle_increment) 
+        right_index = int((right_angle/180) * math.pi / msg.angle_increment)
 
-        if (msg.ranges[front_index] < msg.range_min or msg.ranges[front_index] > msg.range_max or msg.ranges[right_index] < msg.range_min or msg.ranges[right_index] > msg.range_max):
-            return
-        
-        d2 = msg.ranges[front_index]
-        d1 = msg.ranges[right_index]
+        distance_sum = 0
+        points_skipped = 0
 
-        x2 = d2 * math.cos(front_angle/180 * math.pi)
-        y2 = d2 * math.sin(front_angle/180 * math.pi)
+        for i in range(0, points_to_test - 1): 
 
-        x1 = d1 * math.cos(right_angle/180 * math.pi)
-        y1 = d1 * math.sin(right_angle/180 * math.pi)
+            if (msg.ranges[front_index] < msg.range_min or msg.ranges[front_index] > msg.range_max or msg.ranges[right_index] < msg.range_min or msg.ranges[right_index] > msg.range_max):
+                points_skipped += 1
+                continue
+            
+            d2 = msg.ranges[front_index]
+            d1 = msg.ranges[right_index]
 
-        # Distance between the two points
-        d3 = math.sqrt((x1-x2)**2 + (y1-y2)**2)
+            x2 = d2 * math.cos(front_angle/180 * math.pi)
+            y2 = d2 * math.sin(front_angle/180 * math.pi)
 
-        self.dwall = d1 * (x2 - x1) / d3
+            x1 = d1 * math.cos(right_angle/180 * math.pi)
+            y1 = d1 * math.sin(right_angle/180 * math.pi)
+
+            # Distance between the two points
+            d3 = math.sqrt((x1-x2)**2 + (y1-y2)**2)
+
+            distance_sum += d1 * (x2 - x1) / d3
+            front_index += 1
+            right_index += 1
+
+        self.dwall = distance_sum / (points_to_test - points_skipped)
 
         self.get_logger().info('Dwall: "%f"' % self.dwall)
 
@@ -67,7 +82,7 @@ class ScanSubscribe(Node):
         ack = AckermannDriveStamped()
         ack.drive.speed = self.vehicle_speed
 
-        error = 1 - self.dwall   # negative means turn right, positive means turn left
+        error = self.desired_distance - self.dwall   # negative means turn right, positive means turn left
         self.error_sum += error
 
         control_effort = self.kp*error + self.ki*self.error_sum*msg.scan_time + self.kd*(error-self.last_error)/msg.scan_time
