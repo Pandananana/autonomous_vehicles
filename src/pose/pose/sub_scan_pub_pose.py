@@ -8,6 +8,7 @@ from geometry_msgs.msg import PoseStamped
 
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
+import utm
 
 class GPS_ODO_Subscribe(Node):
     def __init__(self):
@@ -20,15 +21,25 @@ class GPS_ODO_Subscribe(Node):
 
         self.publisher = self.create_publisher(PoseStamped, 'vehicle_pose', 10)
 
+        self.pose_msg = PoseStamped()
+
     def gps_callback(self, msg):
-        with open("gps.txt", "a") as myfile:
-            myfile.write(str(msg.latitude) + " " + str(msg.longitude) + "\n")
+        with open("gps.txt", "a") as gps_file:
+            gps_file.write(str(msg.latitude) + " " + str(msg.longitude) + "\n")
 
+        x, y, zone_number, zone_letter = utm.from_latlon(msg.latitude, msg.longitude)
+        
+        self.pose_msg.pose.position.x = x
+        self.pose_msg.pose.position.y = y
 
-
+        self.publisher.publish(self.pose_msg)
 
     def odo_callback(self, msg):
-        pass
+        theta = 2*math.atan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)
+
+        with open("odo.txt", "a") as odo_file:
+            odo_file.write(str(msg.pose.pose.orientation.x) + " | " + str(msg.pose.pose.orientation.y) + " | " + str(msg.pose.pose.orientation.z) + " | " + str(msg.pose.pose.orientation.w) + "\n")
+            odo_file.write("Angle: " + str(theta) + "\n")
 
 
 
